@@ -68,48 +68,43 @@ object TinyURLServer extends App {
     Future {
       httpRequest match {
         case HttpRequest(GET, uri, _, _, _) =>
-          val query = uri.query()
-          if (query.isEmpty) {
-            uri.path match {
-              case Uri.Path("/") =>
-                HttpResponse(entity = HttpEntity(
-                  ContentTypes.`text/html(UTF-8)`,
-                  "<html><body>Welcome!</body></html>"))
-              case Uri.Path(id) =>
-                redisClient.get(id) match {
-                  case None => val res = URLCollection.findOne(MongoDBObject(("ID", id)))
-                    if (res.isEmpty) {
-                      response404
-                    } else {
-                      assert(res.size == 1)
-                      val address = res.get("address").toString
-                      createRedirection(address)
-                    }
-                  case Some(address) => createRedirection(address)
-                }
-            }
-          } else {
-            query.get("address") match {
-              case None => response404
-              case Some(address) =>
-                val res = redisClient.get(address)
-                if (res.isEmpty) {
-                  val res = URLCollection.findOne(MongoDBObject(("address", address)))
+          uri.path match {
+            case Uri.Path("/") =>
+              HttpResponse(entity = HttpEntity(
+                ContentTypes.`text/html(UTF-8)`,
+                "<html><body>Welcome!</body></html>"))
+            case Uri.Path(id) =>
+              redisClient.get(id) match {
+                case None => val res = URLCollection.findOne(MongoDBObject(("ID", id)))
                   if (res.isEmpty) {
-                    val id = generateID(address)
-                    URLCollection.insert(MongoDBObject(("ID", id), ("address", address)))
-                    redisClient.set(id, address)
-                    responseSuccess(id)
+                    response404
                   } else {
-                    val id = res.get("ID").toString
-                    responseSuccess(id)
+                    assert(res.size == 1)
+                    val address = res.get("address").toString
+                    createRedirection(address)
                   }
-                } else {
-                  val id = res.get
-                  responseSuccess(id)
-                }
-            }
+                case Some(address) => createRedirection(address)
+              }
           }
+        case HttpRequest(POST, uri, _, _, _) => uri.path match {
+          case Uri.Path(address) =>
+            val res = redisClient.get(address)
+            if (res.isEmpty) {
+              val res = URLCollection.findOne(MongoDBObject(("address", address)))
+              if (res.isEmpty) {
+                val id = generateID(address)
+                URLCollection.insert(MongoDBObject(("ID", id), ("address", address)))
+                redisClient.set(id, address)
+                responseSuccess(id)
+              } else {
+                val id = res.get("ID").toString
+                responseSuccess(id)
+              }
+            } else {
+              val id = res.get
+              responseSuccess(id)
+            }
+        }
         case r: HttpRequest =>
           r.discardEntityBytes() // important to drain incoming HTTP Entity stream
           response404
@@ -123,5 +118,5 @@ object TinyURLServer extends App {
     }).run()
 
   def end(): Unit = bindingFuture.flatMap(_.unbind()) // trigger unbinding from the port
-    .onComplete(_ => system.terminate())
+      .onComplete(_ => system.terminate())
 }
