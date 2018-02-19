@@ -1,3 +1,5 @@
+package org.DexinLi.TinyURL
+
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpMethods._
@@ -6,10 +8,11 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.Location
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Sink
+import com.mongodb.casbah.Imports._
 import com.mongodb.casbah.MongoClient
 import com.mongodb.casbah.commons.MongoDBObject
-import com.mongodb.casbah.Imports._
 import com.redis.RedisClient
+import org.slf4j.LoggerFactory
 
 import scala.concurrent.Future
 import scala.util.Random
@@ -18,19 +21,25 @@ object TinyURLServer extends App {
   implicit val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
   implicit val executionContext = system.dispatcher
-  val serverSource = Http().bind(interface = "localhost", port = 9000)
+  val logger = LoggerFactory.getLogger(getClass)
+  val serverSource = Http().bind(interface = "0.0.0.0", port = 9000)
   //TODO use replicas, create a specific redis server to pull the data
-  val redisClient = new RedisClient("localhost", 6379)
+  val redisClient = new RedisClient("redis", 6379)
   //TODO use replicas, add authentication
-  val mongoClient = MongoClient()
+  val mongoClient = MongoClient("db")
   val tinyURLdb = mongoClient("TinyURL")
   val URLCollection = tinyURLdb("URL")
+  if (URLCollection.indexInfo.isEmpty) {
+    URLCollection.createIndex(
+      MongoDBObject(("ID", 1), ("address", 1)),
+      MongoDBObject(("background", true))
+    )
+  }
   val numCollection = tinyURLdb("num")
   val response404 = HttpResponse(404, entity = "Unknown resource!")
 
   def responseSuccess(path: String) = HttpResponse(200, entity = path)
 
-  //TODO add statistics data to ElasticSearch
   def createRedirection(address: String): HttpResponse = {
     val locationHeader = Location(address)
     HttpResponse(MovedPermanently, headers = List(locationHeader))
@@ -41,13 +50,13 @@ object TinyURLServer extends App {
 
   def generateID(address: String): String = {
     var valid = true
-    var num: Long = _
-    while (valid) {
+    var num: Long = 0
+    do {
       //Atomic, don't worry
       num = random.nextLong()
       val res = numCollection.find(MongoDBObject(("num", num)))
       valid = res.isEmpty
-    }
+    } while (valid)
     numCollection.insert(MongoDBObject(("num", num)))
     val stringBuilder = new StringBuilder()
     while (num > 0) {
@@ -64,7 +73,7 @@ object TinyURLServer extends App {
     stringBuilder.result()
   }
 
-  val requestHandler: HttpRequest => Future[HttpResponse] = httpRequest =>
+  def requestHandler(httpRequest: HttpRequest): Future[HttpResponse] = {
     Future {
       httpRequest match {
         case HttpRequest(GET, uri, _, _, _) =>
@@ -75,11 +84,14 @@ object TinyURLServer extends App {
                 "<html><body>Welcome!</body></html>"))
             case Uri.Path(id) =>
               redisClient.get(id) match {
-                case None => val res = URLCollection.findOne(MongoDBObject(("ID", id)))
+                case None =>
+                  val res = URLCollection.findOne(MongoDBObject(("ID", id)))
                   if (res.isEmpty) {
                     response404
                   } else {
-                    assert(res.size == 1)
+                    if (res.size != 1) {
+                      logger.error(s"duplicated id: $id\nin following objects: \n\t${res.mkString("\n\t")}\n")
+                    }
                     val address = res.get("address").toString
                     createRedirection(address)
                   }
@@ -110,10 +122,12 @@ object TinyURLServer extends App {
           response404
       }
     }
+  }
 
   val bindingFuture: Future[Http.ServerBinding] =
     serverSource.to(Sink.foreach { connection =>
-      println("Accepted new connection from " + connection.remoteAddress)
+      val address = connection.remoteAddress
+      logger.info("Accepted new connection from " + address)
       connection handleWithAsyncHandler requestHandler
     }).run()
 

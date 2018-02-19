@@ -18,5 +18,6 @@ libraryDependencies += "org.mongodb" %% "casbah" % "3.1.1"
 //scalatest
 libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.4"
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.4" % "test"
+libraryDependencies += "org.slf4j" % "slf4j-log4j12" % "1.7.2" % "test"
 //junit
 libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test"

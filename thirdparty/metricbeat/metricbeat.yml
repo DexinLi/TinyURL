@@ -1,0 +1,25 @@
+metricbeat.modules:
+- module: redis
+  metricsets: ["info", "keyspace"]
+  period: 10s
+
+  # Redis hosts
+  hosts: ["redis:6379"]
+
+- module: nginx
+  metricsets: ["stubstatus"]
+  period: 10s
+
+  # Nginx hosts
+  hosts: ["nginx"]
+
+
+- module: mongodb
+  metricsets: ["status"]
+  hosts: ["db"]
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+
+setup.kibana:
+  host: "kibana:5601"

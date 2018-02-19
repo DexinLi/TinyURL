@@ -1,0 +1,94 @@
+version: '2'
+
+services:
+ db:
+   image: mongo:3.4.7
+   entrypoint:
+     - mongod
+     - --dbpath
+     - /data/db
+     - --logpath
+     - /logs/mongo.log
+   volumes:
+      - ./data/mongodb/db:/data/db
+      - ./logs/mongodb:/logs
+   ports:
+     - "27017:27017"
+     - "28017:28017"
+   networks:
+     - elk
+ elasticsearch:
+   image: docker.elastic.co/elasticsearch/elasticsearch-oss:6.2.1
+   volumes:
+     - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+     - ./data/elasticsearch:/usr/share/elasticsearch/data
+     - ./logs/elasticsearch:/usr/share/elasticsearch/logs
+   ports:
+     - "9200:9200"
+     - "9300:9300"
+   networks:
+     - elk
+   environment:
+     ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+
+# logstash:
+#   image: docker.elastic.co/logstash/logstash-oss:6.2.1
+#   volumes:
+#     - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+#     - ./logstash/pipeline:/usr/share/logstash/pipeline
+#   expose:
+#     - "5000"
+#   environment:
+#     LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+#   networks:
+#     - elk
+#   depends_on:
+#     - elasticsearch
+
+ kibana:
+   image: docker.elastic.co/kibana/kibana-oss:6.2.1
+   volumes:
+     - ./kibana/config/:/usr/share/kibana/config
+   ports:
+     - "5601:5601"
+   networks:
+     - elk
+   depends_on:
+     - elasticsearch
+   command: bash -c 'sleep 20; kibana'
+ metricbeat:
+   image: docker.elastic.co/beats/metricbeat:6.2.1
+   volumes:
+     - ./metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+   networks:
+     - elk
+   command: bash -c 'sleep 30; metricbeat setup --dashboards; metricbeat modules enable nginx mongodb redis;metricbeat -e'
+ redis:
+   image: redis:3.2
+   ports:
+     - 6379:6379
+   command:
+     - --bind 0.0.0.0
+   networks:
+     - elk
+ nginx:
+   image: nginx:1.12-alpine
+   ports:
+     - 80:80
+   volumes:
+     - ./nginx/conf:/etc/nginx/conf.d
+   networks:
+     - elk
+ server:
+   image: java:8-alpine
+   volumes:
+     - ../target/scala-2.12/TinyURL-assembly-0.1.jar:/home/TinyURL-assembly-0.1.jar:ro
+   ports:
+     - 9000:9000
+   command: java -jar /home/TinyURL-assembly-0.1.jar
+   networks:
+     - elk
+
+networks:
+  elk:
+
